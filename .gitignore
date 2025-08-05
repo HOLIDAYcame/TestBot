@@ -1,0 +1,33 @@
+# Виртуальное окружение Python
+venv/
+env/
+.venv/
+
+# Локальные файлы Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Лог-файл
+bot.log
+
+# Конфиденциальные файлы
+config.py
+
+# Локальные изображения (если они временные или большие)
+images/
+
+# База данных SQLite (если используется в будущем)
+*.db
+
+# Временные файлы и кэш
+*.log
+*.cache
+.DS_Store  # Для macOS
+*.swp
+*.swo
+
+# IDE и редакторы
+.idea/  # PyCharm
+.vscode/  # Visual Studio Code
