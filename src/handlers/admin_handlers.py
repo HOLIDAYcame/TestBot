@@ -1,5 +1,6 @@
 import logging
 
+import asyncpg
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -19,14 +20,9 @@ router = Router()
 
 
 @router.callback_query(F.data == "admin_stats")
-async def handle_admin_stats(callback: CallbackQuery):
+async def handle_admin_stats(callback: CallbackQuery, db_pool: asyncpg.Pool):
     """Показ статистики пользователей и заявок"""
-    pool = callback.bot.get("db_pool")
-    if not pool:
-        await callback.answer("❌ Ошибка подключения к базе данных.", show_alert=True)
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         if not await is_admin(conn, callback.from_user.id):
             await callback.answer("❌ Нет доступа.", show_alert=True)
             return
@@ -40,14 +36,9 @@ async def handle_admin_stats(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "admin_broadcast")
-async def handle_admin_broadcast(callback: CallbackQuery, state: FSMContext):
+async def handle_admin_broadcast(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
     """Запуск процесса рассылки"""
-    pool = callback.bot.get("db_pool")
-    if not pool:
-        await callback.answer("❌ Ошибка подключения к базе данных.", show_alert=True)
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         if not await is_admin(conn, callback.from_user.id):
             await callback.answer("❌ Нет доступа.", show_alert=True)
             return
@@ -62,14 +53,9 @@ async def handle_admin_broadcast(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == "admin_users")
-async def handle_admin_users(callback: CallbackQuery, state: FSMContext):
+async def handle_admin_users(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
     """Отображение списка пользователей"""
-    pool = callback.bot.get("db_pool")
-    if not pool:
-        await callback.answer("❌ Ошибка подключения к базе данных.", show_alert=True)
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         if not await is_admin(conn, callback.from_user.id):
             await callback.answer("❌ Нет доступа.", show_alert=True)
             return
@@ -97,14 +83,9 @@ async def handle_admin_cancel(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("user_info:"))
-async def handle_user_info(callback: CallbackQuery):
+async def handle_user_info(callback: CallbackQuery, db_pool: asyncpg.Pool):
     """Показ информации о конкретном пользователе"""
-    pool = callback.bot.get("db_pool")
-    if not pool:
-        await callback.answer("❌ Ошибка подключения к базе данных.", show_alert=True)
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         if not await is_admin(conn, callback.from_user.id):
             await callback.answer("❌ Нет доступа.", show_alert=True)
             return
@@ -138,14 +119,9 @@ async def handle_user_info(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("users_page:"))
-async def handle_users_page(callback: CallbackQuery, state: FSMContext):
+async def handle_users_page(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
     """Обработка навигации по страницам пользователей"""
-    pool = callback.bot.get("db_pool")
-    if not pool:
-        await callback.answer("❌ Ошибка подключения к базе данных.", show_alert=True)
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         if not await is_admin(conn, callback.from_user.id):
             await callback.answer("❌ Нет доступа.", show_alert=True)
             return
@@ -156,14 +132,9 @@ async def handle_users_page(callback: CallbackQuery, state: FSMContext):
 
 
 @router.message(AdminPanel.waiting_for_broadcast_message)
-async def process_broadcast_message(message: Message, state: FSMContext):
+async def process_broadcast_message(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
     """Обработка сообщения для рассылки от админа"""
-    pool = message.bot.get("db_pool")
-    if not pool:
-        await message.answer("Ошибка подключения к базе данных. Попробуйте позже.")
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         if not await is_admin(conn, message.from_user.id):
             return
 
@@ -210,14 +181,9 @@ async def process_broadcast_message(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("broadcast_"))
-async def broadcast_confirm_handler(callback: CallbackQuery, state: FSMContext):
+async def broadcast_confirm_handler(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
     """Подтверждение или отмена рассылки"""
-    pool = callback.bot.get("db_pool")
-    if not pool:
-        await callback.answer("❌ Ошибка подключения к базе данных.", show_alert=True)
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         if not await is_admin(conn, callback.from_user.id):
             await callback.answer("❌ Нет доступа.", show_alert=True)
             return

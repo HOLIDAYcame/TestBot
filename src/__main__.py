@@ -9,6 +9,7 @@ from src.config import BOT_TOKEN, DB_CONFIG
 from src.database import init_db
 from src.handlers.admin_handlers import router as admin_router
 from src.handlers.user_handlers import router as user_router
+from src.middlewares.db_pool_middleware import DbPoolMiddleware
 from src.middlewares.error_handler import ErrorHandlingMiddleware
 
 
@@ -27,9 +28,8 @@ async def main():
     """Основная функция запуска бота"""
     pool = await asyncpg.create_pool(**DB_CONFIG)
     
-    # Сохраняем пул в боте для доступа из хендлеров
-    bot["db_pool"] = pool
-    
+    # Подключаем middleware для передачи пула
+    dp.update.middleware(DbPoolMiddleware(pool))
     dp.update.middleware(ErrorHandlingMiddleware())
 
     dp.include_router(user_router)

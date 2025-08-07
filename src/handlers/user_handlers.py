@@ -27,15 +27,9 @@ router = Router()
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
     """Обработчик команды /start - регистрация пользователя"""
-    # Получаем пул из диспетчера
-    pool = message.bot.get("db_pool")
-    if not pool:
-        await message.answer("Ошибка подключения к базе данных. Попробуйте позже.")
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         try:
             user = await conn.fetchrow("SELECT user_id FROM users WHERE user_id=$1", message.from_user.id)
         except Exception as e:
@@ -52,14 +46,9 @@ async def cmd_start(message: Message, state: FSMContext):
 
 
 @router.message(Command("admin"))
-async def cmd_admin(message: Message):
+async def cmd_admin(message: Message, db_pool: asyncpg.Pool):
     """Обработчик команды /admin - проверка прав доступа"""
-    pool = message.bot.get("db_pool")
-    if not pool:
-        await message.answer("Ошибка подключения к базе данных. Попробуйте позже.")
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         try:
             if await is_admin(conn, message.from_user.id):
                 await message.answer(
@@ -106,7 +95,7 @@ async def process_birth_date(message: Message, state: FSMContext):
 
 
 @router.message(Registration.waiting_for_phone)
-async def process_phone(message: Message, state: FSMContext):
+async def process_phone(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
     """Обработка ввода номера телефона"""
     if not message.contact:
         await message.answer("❌ Пожалуйста, используйте кнопку для отправки номера телефона.")
@@ -118,12 +107,7 @@ async def process_phone(message: Message, state: FSMContext):
     full_name = user_data["full_name"]
     birth_date_str = user_data["birth_date"]
 
-    pool = message.bot.get("db_pool")
-    if not pool:
-        await message.answer("Ошибка подключения к базе данных. Попробуйте позже.")
-        return
-    
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         try:
             await register_user(conn, user_id, full_name, birth_date_str, phone_number)
         except Exception as e:
@@ -182,7 +166,7 @@ async def process_screenshot(message: Message, state: FSMContext):
 
 
 @router.callback_query(RequestForm.choosing_options)
-async def process_options_callback(callback: CallbackQuery, state: FSMContext):
+async def process_options_callback(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
     """Обработка выбора опций заявки"""
     option_map = {
         "equipment": "Оборудование",
@@ -199,7 +183,7 @@ async def process_options_callback(callback: CallbackQuery, state: FSMContext):
         return
 
     if callback.data == "confirm":
-        await _handle_request_confirmation(callback, state, selected, option_map)
+        await _handle_request_confirmation(callback, state, selected, option_map, db_pool)
 
 
 async def _handle_option_selection(callback: CallbackQuery, state: FSMContext, selected: set, option_map: dict):
@@ -215,20 +199,13 @@ async def _handle_option_selection(callback: CallbackQuery, state: FSMContext, s
     await callback.answer()
 
 
-async def _handle_request_confirmation(callback: CallbackQuery, state: FSMContext, selected: set, option_map: dict):
+async def _handle_request_confirmation(callback: CallbackQuery, state: FSMContext, selected: set, option_map: dict, db_pool: asyncpg.Pool):
     """Подтверждение и сохранение заявки"""
     if not selected:
         await callback.answer("Выберите хотя бы один пункт!", show_alert=True)
         return
 
-    pool = callback.bot.get("db_pool")
-    if not pool:
-        await callback.message.answer("Ошибка подключения к базе данных. Попробуйте позже.", reply_markup=get_main_menu())
-        await state.clear()
-        await callback.answer()
-        return
-
-    async with pool.acquire() as conn:
+    async with db_pool.acquire() as conn:
         try:
             user_id = callback.from_user.id
             state_data = await state.get_data()

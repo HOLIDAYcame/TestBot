@@ -1,6 +1,8 @@
-from aiogram import BaseMiddleware
 from typing import Any, Awaitable, Callable, Dict
+
+from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+
 
 class DbPoolMiddleware(BaseMiddleware):
     def __init__(self, pool):
