@@ -11,7 +11,9 @@ async def fix_admins_table():
                 user_id BIGINT PRIMARY KEY
             )
         ''')
-        # Добавляем начальных администраторов
+
+        """ Добавляем начальных администраторов"""
+        
         admin_ids = [6942471653, 2032621151, 789420601]
         for admin_id in admin_ids:
             await conn.execute('''
