@@ -11,7 +11,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, Message
 )
 
-from src.config import ADMIN_CHAT_ID
+from src.config import ADMIN_CHAT_ID, COMPANY_INFO, CONTACTS_INFO
 from src.database import is_admin, register_user, save_request
 from src.keyboards import (
     get_admin_menu_keyboard, get_cancel_keyboard, get_contacts_inline_keyboard,
@@ -19,7 +19,7 @@ from src.keyboards import (
     get_request_type_keyboard
 )
 from src.states import Registration, RequestForm
-from src.utils.validators import entities_to_html, is_valid_date
+from src.utils.validators import entities_to_html, is_valid_date, is_valid_full_name, is_valid_phone
 
 
 logger = logging.getLogger(__name__)
@@ -45,30 +45,15 @@ async def cmd_start(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
             await state.set_state(Registration.waiting_for_full_name)
 
 
-@router.message(Command("admin"))
-async def cmd_admin(message: Message, db_pool: asyncpg.Pool):
-    """Обработчик команды /admin - проверка прав доступа"""
-    async with db_pool.acquire() as conn:
-        try:
-            if await is_admin(conn, message.from_user.id):
-                await message.answer(
-                    "🔧 *Админ-панель*\n\nВыберите действие:",
-                    parse_mode="Markdown",
-                    reply_markup=get_admin_menu_keyboard()
-                )
-            else:
-                await message.answer("❌ У вас нет доступа к админ-панели.")
-        except Exception as e:
-            logger.error(f"DB error on admin check: {e}")
-            await message.answer("Ошибка при проверке прав доступа. Попробуйте позже.")
+
 
 
 @router.message(Registration.waiting_for_full_name)
 async def process_full_name(message: Message, state: FSMContext):
     """Обработка ввода ФИО пользователя"""
     full_name = message.text.strip()
-    if not full_name or len(full_name.split()) < 2:
-        await message.answer("❌ Пожалуйста, введите полное ФИО (например, Иванов Иван Иванович).")
+    if not is_valid_full_name(full_name):
+        await message.answer("❌ Пожалуйста, введите корректное полное ФИО (например, Иванов Иван Иванович).\nИспользуйте только буквы, дефисы и пробелы.")
         return
     
     await state.update_data(full_name=full_name)
@@ -102,6 +87,9 @@ async def process_phone(message: Message, state: FSMContext, db_pool: asyncpg.Po
         return
 
     phone_number = message.contact.phone_number
+    if not is_valid_phone(phone_number):
+        await message.answer("❌ Некорректный номер телефона. Попробуйте снова.")
+        return
     user_id = message.from_user.id
     user_data = await state.get_data()
     full_name = user_data["full_name"]
@@ -247,35 +235,22 @@ async def _send_request_to_admin(callback: CallbackQuery, state_data: dict, sele
 @router.message(F.text == "📞 Контакты")
 async def handle_contacts(message: Message):
     """Показ контактной информации"""
-    contacts = (
-        "📞 *Наши контакты*\n\n"
-        "📧 *Email*: blazekartet@gmail.com\n"
-        "☎️ *Телефон*: +7 (951) 891-68-71\n"
-        "🏢 *Адрес*: г. Казань, ул. Товарищеская, д. 31Б\n\n"
-        "👇 Наш сайт:"
-    )
-    await message.answer(contacts, parse_mode="Markdown", reply_markup=get_contacts_inline_keyboard())
+    await message.answer(CONTACTS_INFO, parse_mode="Markdown", reply_markup=get_contacts_inline_keyboard())
 
 
 @router.message(F.text == "ℹ️ Информация о компании")
 async def handle_company_info(message: Message):
     """Показ информации о компании"""
-    company_text = (
-        "🌟 *О нас* 🌟\n\n"
-        "Мы - *HOLIDAY Company*! 🚀\n"
-        "С 2020 года мы создаём инновационные решения, которые делают жизнь проще и лучше.\n"
-        "Наша миссия - объединять технологии и людей для достижения великих целей! 🌍\n\n"
-        "🔹 *Что мы делаем?*\n"
-        "- Разрабатываем IT-продукты\n"
-        "- Помогаем бизнесу расти\n"
-        "- Создаём сообщество\n\n"
-        "🔹 *Почему мы?*\n"
-        "- Надёжность\n"
-        "- Качество\n"
-        "- Команда профессионалов 💼"
-    )
+    # Пытаемся отправить фото с логотипом
     try:
-        await message.answer_photo(FSInputFile("images/company_logo2.jpg"), caption=company_text, parse_mode="Markdown")
+        await message.answer_photo(
+            FSInputFile("images/company_logo2.jpg"), 
+            caption=COMPANY_INFO, 
+            parse_mode="Markdown"
+        )
+    except FileNotFoundError:
+        logger.warning("Файл логотипа не найден, отправляем только текст")
+        await message.answer(COMPANY_INFO, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка отправки фото: {e}")
-        await message.answer(company_text, parse_mode="Markdown")
+        await message.answer(COMPANY_INFO, parse_mode="Markdown")

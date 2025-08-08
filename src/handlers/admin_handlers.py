@@ -2,11 +2,12 @@ import logging
 
 import asyncpg
 from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from src.config import ADMIN_CHAT_ID
-from src.database import get_all_user_ids, get_statistics, is_admin
+from src.database import get_all_user_ids, get_statistics, is_admin, get_user_by_id, get_users_by_ids
 from src.keyboards import (
     get_admin_menu_keyboard, get_broadcast_confirm_keyboard,
     get_broadcast_input_keyboard
@@ -17,6 +18,24 @@ from src.utils.validators import entities_to_html
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+
+@router.message(Command("admin"))
+async def cmd_admin(message: Message, db_pool: asyncpg.Pool):
+    """Обработчик команды /admin - проверка прав доступа"""
+    async with db_pool.acquire() as conn:
+        try:
+            if await is_admin(conn, message.from_user.id):
+                await message.answer(
+                    "🔧 *Админ-панель*\n\nВыберите действие:",
+                    parse_mode="Markdown",
+                    reply_markup=get_admin_menu_keyboard()
+                )
+            else:
+                await message.answer("❌ У вас нет доступа к админ-панели.")
+        except Exception as e:
+            logger.error(f"DB error on admin check: {e}")
+            await message.answer("Ошибка при проверке прав доступа. Попробуйте позже.")
 
 
 @router.callback_query(F.data == "admin_stats")
@@ -91,10 +110,7 @@ async def handle_user_info(callback: CallbackQuery, db_pool: asyncpg.Pool):
             return
         
         user_id = int(callback.data.split(":")[1])
-        user_info = await conn.fetchrow(
-            "SELECT user_id, full_name, birth_date, phone_number FROM users WHERE user_id = $1", 
-            user_id
-        )
+        user_info = await get_user_by_id(conn, user_id)
         
         if user_info:
             info_text = (
@@ -222,7 +238,10 @@ async def broadcast_confirm_handler(callback: CallbackQuery, state: FSMContext, 
                 )
             except Exception as e:
                 logger.error(f"Broadcast failed: {e}")
-                await callback.message.edit_text("❌ Ошибка при отправке рассылки.", reply_markup=get_admin_menu_keyboard())
+                await callback.message.edit_text(
+                    "❌ Ошибка при отправке рассылки.", 
+                    reply_markup=get_admin_menu_keyboard()
+                )
 
             await state.clear()
 
@@ -245,9 +264,7 @@ async def show_users_page(message: Message, page: int, state: FSMContext, conn):
     end_idx = start_idx + users_per_page
     current_users = all_user_ids[start_idx:end_idx]
 
-    users_data = await conn.fetch(
-        "SELECT user_id, full_name FROM users WHERE user_id = ANY($1)", current_users
-    )
+    users_data = await get_users_by_ids(conn, current_users)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=user["full_name"], callback_data=f"user_info:{user['user_id']}")]

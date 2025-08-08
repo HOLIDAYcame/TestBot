@@ -3,7 +3,7 @@ from typing import Any, Awaitable, Callable, Dict
 
 import asyncpg
 from aiogram import BaseMiddleware
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import Message, TelegramObject
 
 from src.keyboards import get_main_menu
@@ -32,10 +32,20 @@ class ErrorHandlingMiddleware(BaseMiddleware):
             if isinstance(event, Message):
                 await event.answer("❌ Ошибка базы данных. Попробуйте позже.", reply_markup=get_main_menu())
 
+        except TelegramBadRequest as e:
+            logger.error(f"Telegram Bad Request: {e}")
+            if isinstance(event, Message):
+                await event.answer("❌ Некорректный запрос. Попробуйте снова.")
+
         except TelegramAPIError as e:
             logger.error(f"Telegram API error: {e}")
             if isinstance(event, Message):
                 await event.answer("❌ Ошибка Telegram. Попробуйте снова чуть позже.")
+
+        except ValueError as e:
+            logger.error(f"ValueError: {e}")
+            if isinstance(event, Message):
+                await event.answer("❌ Некорректные данные. Проверьте введенную информацию.")
 
         except Exception as e:
             logger.error(f"Unexpected error: {e}", exc_info=True)
