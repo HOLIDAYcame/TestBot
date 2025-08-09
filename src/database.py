@@ -2,6 +2,7 @@ import logging
 from typing import List, Optional, Tuple
 
 from asyncpg import Connection
+from src.config import ADMIN_IDS
 
 
 logger = logging.getLogger(__name__)
@@ -93,9 +94,9 @@ async def get_all_user_ids(conn: Connection) -> List[int]:
 async def is_admin(conn: Connection, user_id: int) -> bool:
     """Проверка, является ли пользователь админом"""
     try:
-        return await conn.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM admins WHERE user_id = $1)", user_id
-        )
+        if ADMIN_IDS:
+            return user_id in ADMIN_IDS
+        return await conn.fetchval("SELECT EXISTS (SELECT 1 FROM admins WHERE user_id = $1)", user_id)
     except Exception as e:
         logger.error(f"Ошибка при проверке прав админа для пользователя {user_id}: {e}")
         raise

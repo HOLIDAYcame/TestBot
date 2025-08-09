@@ -10,6 +10,7 @@ from src.database import init_db
 from src.handlers.admin_handlers import router as admin_router
 from src.handlers.user_handlers import router as user_router
 from src.middlewares.db_pool_middleware import DbPoolMiddleware
+from src.middlewares.db_connection_middleware import DbConnectionMiddleware
 from src.middlewares.error_handler import ErrorHandlingMiddleware
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 
@@ -33,6 +34,7 @@ async def main():
         
         # Подключаем middleware для передачи пула
         dp.update.middleware(DbPoolMiddleware(pool))
+        dp.update.middleware(DbConnectionMiddleware(pool))
         dp.update.middleware(ErrorHandlingMiddleware())
         dp.callback_query.middleware(CallbackAnswerMiddleware())
 

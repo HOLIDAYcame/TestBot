@@ -27,22 +27,21 @@ router = Router()
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
+async def cmd_start(message: Message, state: FSMContext, conn: asyncpg.Connection):
     """Обработчик команды /start - регистрация пользователя"""
-    async with db_pool.acquire() as conn:
-        try:
-            user = await conn.fetchrow("SELECT user_id FROM users WHERE user_id=$1", message.from_user.id)
-        except Exception as e:
-            logger.error(f"DB error on user check: {e}")
-            await message.answer("Ошибка при обращении к базе данных. Попробуйте позже.")
-            return
+    try:
+        user = await conn.fetchrow("SELECT user_id FROM users WHERE user_id=$1", message.from_user.id)
+    except Exception as e:
+        logger.error(f"DB error on user check: {e}")
+        await message.answer("Ошибка при обращении к базе данных. Попробуйте позже.")
+        return
 
-        if user:
-            await message.answer("Вы уже зарегистрированы!", reply_markup=get_main_menu())
-            await state.clear()
-        else:
-            await message.answer("👋 Добро пожаловать! Давайте зарегистрируемся.\nПожалуйста, введите ваше ФИО:")
-            await state.set_state(Registration.waiting_for_full_name)
+    if user:
+        await message.answer("Вы уже зарегистрированы!", reply_markup=get_main_menu())
+        await state.clear()
+    else:
+        await message.answer("👋 Добро пожаловать! Давайте зарегистрируемся.\nПожалуйста, введите ваше ФИО:")
+        await state.set_state(Registration.waiting_for_full_name)
 
 
 
@@ -80,7 +79,7 @@ async def process_birth_date(message: Message, state: FSMContext):
 
 
 @router.message(Registration.waiting_for_phone)
-async def process_phone(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
+async def process_phone(message: Message, state: FSMContext, conn: asyncpg.Connection):
     """Обработка ввода номера телефона"""
     if not message.contact:
         await message.answer("❌ Пожалуйста, используйте кнопку для отправки номера телефона.")
@@ -94,34 +93,31 @@ async def process_phone(message: Message, state: FSMContext, db_pool: asyncpg.Po
     user_data = await state.get_data()
     full_name = user_data["full_name"]
     birth_date_str = user_data["birth_date"]
-    # Преобразуем строку даты в объект date для корректной записи в PostgreSQL
     birth_date_obj = datetime.strptime(birth_date_str, '%d.%m.%Y').date()
 
-    async with db_pool.acquire() as conn:
-        try:
-            await register_user(conn, user_id, full_name, birth_date_obj, phone_number)
-        except Exception as e:
-            logger.error(f"DB error on user registration: {e}")
-            await message.answer("Ошибка при регистрации. Попробуйте позже.")
-            return
+    try:
+        await register_user(conn, user_id, full_name, birth_date_obj, phone_number)
+    except Exception as e:
+        logger.error(f"DB error on user registration: {e}")
+        await message.answer("Ошибка при регистрации. Попробуйте позже.")
+        return
 
-        await message.answer(
-            f"✅ Регистрация завершена!\nФИО: {full_name}\nДата рождения: {birth_date_str}\nТелефон: {phone_number}",
-            reply_markup=get_main_menu()
-        )
-        await state.clear()
+    await message.answer(
+        f"✅ Регистрация завершена!\nФИО: {full_name}\nДата рождения: {birth_date_str}\nТелефон: {phone_number}",
+        reply_markup=get_main_menu()
+    )
+    await state.clear()
 
 
 @router.message(F.text == "📝 Оставить заявку")
-async def start_request(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
+async def start_request(message: Message, state: FSMContext, conn: asyncpg.Connection):
     """Начало процесса создания заявки. Проверяем, что пользователь зарегистрирован."""
-    async with db_pool.acquire() as conn:
-        try:
-            is_registered = await conn.fetchval("SELECT EXISTS (SELECT 1 FROM users WHERE user_id=$1)", message.from_user.id)
-        except Exception as e:
-            logger.error(f"DB error on registration check before request: {e}")
-            await message.answer("Ошибка при обращении к базе данных. Попробуйте позже.")
-            return
+    try:
+        is_registered = await conn.fetchval("SELECT EXISTS (SELECT 1 FROM users WHERE user_id=$1)", message.from_user.id)
+    except Exception as e:
+        logger.error(f"DB error on registration check before request: {e}")
+        await message.answer("Ошибка при обращении к базе данных. Попробуйте позже.")
+        return
 
     if not is_registered:
         await message.answer("❌ Сначала пройдите регистрацию: отправьте /start и заполните данные.")
@@ -169,7 +165,7 @@ async def process_screenshot(message: Message, state: FSMContext):
 
 
 @router.callback_query(RequestForm.choosing_options)
-async def process_options_callback(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
+async def process_options_callback(callback: CallbackQuery, state: FSMContext, conn: asyncpg.Connection):
     """Обработка выбора опций заявки"""
     option_map = {
         "equipment": "Оборудование",
@@ -186,7 +182,7 @@ async def process_options_callback(callback: CallbackQuery, state: FSMContext, d
         return
 
     if callback.data == "confirm":
-        await _handle_request_confirmation(callback, state, selected, option_map, db_pool)
+        await _handle_request_confirmation(callback, state, selected, option_map, conn)
 
 
 async def _handle_option_selection(callback: CallbackQuery, state: FSMContext, selected: set, option_map: dict):
@@ -202,37 +198,36 @@ async def _handle_option_selection(callback: CallbackQuery, state: FSMContext, s
     await callback.answer()
 
 
-async def _handle_request_confirmation(callback: CallbackQuery, state: FSMContext, selected: set, option_map: dict, db_pool: asyncpg.Pool):
+async def _handle_request_confirmation(callback: CallbackQuery, state: FSMContext, selected: set, option_map: dict, conn: asyncpg.Connection):
     """Подтверждение и сохранение заявки"""
     if not selected:
         await callback.answer("Выберите хотя бы один пункт!", show_alert=True)
         return
 
-    async with db_pool.acquire() as conn:
-        try:
-            user_id = callback.from_user.id
-            state_data = await state.get_data()
-            user_info = await conn.fetchrow("SELECT full_name, phone_number FROM users WHERE user_id = $1", user_id)
-            if not user_info:
-                await callback.message.answer("❌ Вы ещё не зарегистрированы. Отправьте /start, чтобы пройти регистрацию.", reply_markup=get_main_menu())
-                await state.clear()
-                await callback.answer()
-                return
-            request_id = await save_request(
-                conn, user_id, state_data["request_type"], state_data.get("screenshot"), list(selected)
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении заявки: {e}")
-            await callback.message.answer("❌ Ошибка сохранения заявки. Попробуйте позже.", reply_markup=get_main_menu())
+    try:
+        user_id = callback.from_user.id
+        state_data = await state.get_data()
+        user_info = await conn.fetchrow("SELECT full_name, phone_number FROM users WHERE user_id = $1", user_id)
+        if not user_info:
+            await callback.message.answer("❌ Вы ещё не зарегистрированы. Отправьте /start, чтобы пройти регистрацию.", reply_markup=get_main_menu())
             await state.clear()
             await callback.answer()
             return
-
-        await _send_request_to_admin(callback, state_data, selected, option_map, user_info, request_id)
-        await callback.message.edit_reply_markup()
-        await callback.message.answer("Ваша заявка отправлена! Спасибо!", reply_markup=get_main_menu())
+        request_id = await save_request(
+            conn, user_id, state_data["request_type"], state_data.get("screenshot"), list(selected)
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении заявки: {e}")
+        await callback.message.answer("❌ Ошибка сохранения заявки. Попробуйте позже.", reply_markup=get_main_menu())
         await state.clear()
         await callback.answer()
+        return
+
+    await _send_request_to_admin(callback, state_data, selected, option_map, user_info, request_id)
+    await callback.message.edit_reply_markup()
+    await callback.message.answer("Ваша заявка отправлена! Спасибо!", reply_markup=get_main_menu())
+    await state.clear()
+    await callback.answer()
 
 
 async def _send_request_to_admin(callback: CallbackQuery, state_data: dict, selected: set, option_map: dict, user_info: dict, request_id: int):

@@ -21,46 +21,43 @@ router = Router()
 
 
 @router.message(Command("admin"))
-async def cmd_admin(message: Message, db_pool: asyncpg.Pool):
+async def cmd_admin(message: Message, conn: asyncpg.Connection):
     """Обработчик команды /admin - проверка прав доступа"""
-    async with db_pool.acquire() as conn:
-        try:
-            if await is_admin(conn, message.from_user.id):
-                await message.answer(
-                    "🔧 *Админ-панель*\n\nВыберите действие:",
-                    parse_mode="Markdown",
-                    reply_markup=get_admin_menu_keyboard()
-                )
-            else:
-                await message.answer("❌ У вас нет доступа к админ-панели.")
-        except Exception as e:
-            logger.error(f"DB error on admin check: {e}")
-            await message.answer("Ошибка при проверке прав доступа. Попробуйте позже.")
+    try:
+        if await is_admin(conn, message.from_user.id):
+            await message.answer(
+                "🔧 *Админ-панель*\n\nВыберите действие:",
+                parse_mode="Markdown",
+                reply_markup=get_admin_menu_keyboard()
+            )
+        else:
+            await message.answer("❌ У вас нет доступа к админ-панели.")
+    except Exception as e:
+        logger.error(f"DB error on admin check: {e}")
+        await message.answer("Ошибка при проверке прав доступа. Попробуйте позже.")
 
 
 @router.callback_query(F.data == "admin_stats")
-async def handle_admin_stats(callback: CallbackQuery, db_pool: asyncpg.Pool):
+async def handle_admin_stats(callback: CallbackQuery, conn: asyncpg.Connection):
     """Показ статистики пользователей и заявок"""
-    async with db_pool.acquire() as conn:
-        if not await is_admin(conn, callback.from_user.id):
-            await callback.answer("❌ Нет доступа.", show_alert=True)
-            return
-        users_count, requests_count = await get_statistics(conn)
-        await callback.message.edit_text(
-            f"📊 *Статистика бота*\n\n👥 Пользователей: {users_count}\n📝 Заявок: {requests_count}",
-            parse_mode="Markdown",
-            reply_markup=get_admin_menu_keyboard()
-        )
-        await callback.answer()
+    if not await is_admin(conn, callback.from_user.id):
+        await callback.answer("❌ Нет доступа.", show_alert=True)
+        return
+    users_count, requests_count = await get_statistics(conn)
+    await callback.message.edit_text(
+        f"📊 *Статистика бота*\n\n👥 Пользователей: {users_count}\n📝 Заявок: {requests_count}",
+        parse_mode="Markdown",
+        reply_markup=get_admin_menu_keyboard()
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "admin_broadcast")
-async def handle_admin_broadcast(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
+async def handle_admin_broadcast(callback: CallbackQuery, state: FSMContext, conn: asyncpg.Connection):
     """Запуск процесса рассылки"""
-    async with db_pool.acquire() as conn:
-        if not await is_admin(conn, callback.from_user.id):
-            await callback.answer("❌ Нет доступа.", show_alert=True)
-            return
+    if not await is_admin(conn, callback.from_user.id):
+        await callback.answer("❌ Нет доступа.", show_alert=True)
+        return
 
     await callback.message.edit_text(
         "📢 *Рассылка*\n\nОтправьте сообщение для рассылки (текст, фото или фото с текстом):",
@@ -72,14 +69,13 @@ async def handle_admin_broadcast(callback: CallbackQuery, state: FSMContext, db_
 
 
 @router.callback_query(F.data == "admin_users")
-async def handle_admin_users(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
+async def handle_admin_users(callback: CallbackQuery, state: FSMContext, conn: asyncpg.Connection):
     """Отображение списка пользователей"""
-    async with db_pool.acquire() as conn:
-        if not await is_admin(conn, callback.from_user.id):
-            await callback.answer("❌ Нет доступа.", show_alert=True)
-            return
-        await show_users_page(callback.message, 1, state, conn)
-        await callback.answer()
+    if not await is_admin(conn, callback.from_user.id):
+        await callback.answer("❌ Нет доступа.", show_alert=True)
+        return
+    await show_users_page(callback.message, 1, state, conn)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "admin_back")
@@ -102,57 +98,54 @@ async def handle_admin_cancel(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("user_info:"))
-async def handle_user_info(callback: CallbackQuery, db_pool: asyncpg.Pool):
+async def handle_user_info(callback: CallbackQuery, conn: asyncpg.Connection):
     """Показ информации о конкретном пользователе"""
-    async with db_pool.acquire() as conn:
-        if not await is_admin(conn, callback.from_user.id):
-            await callback.answer("❌ Нет доступа.", show_alert=True)
-            return
-        
-        user_id = int(callback.data.split(":")[1])
-        user_info = await get_user_by_id(conn, user_id)
-        
-        if user_info:
-            info_text = (
-                f"👤 *Информация о пользователе*\n\n"
-                f"🆔 ID: `{user_info['user_id']}`\n"
-                f"📝 ФИО: {user_info['full_name']}\n"
-                f"📅 Дата рождения: {user_info['birth_date']}\n"
-                f"📱 Телефон: {user_info['phone_number']}"
-            )
-            
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад к списку", callback_data="admin_users")]
-            ])
-            
-            await callback.message.edit_text(
-                info_text,
-                parse_mode="Markdown",
-                reply_markup=keyboard
-            )
-        else:
-            await callback.answer("❌ Пользователь не найден.", show_alert=True)
+    if not await is_admin(conn, callback.from_user.id):
+        await callback.answer("❌ Нет доступа.", show_alert=True)
+        return
+
+    user_id = int(callback.data.split(":")[1])
+    user_info = await get_user_by_id(conn, user_id)
+    
+    if user_info:
+        info_text = (
+            f"👤 *Информация о пользователе*\n\n"
+            f"🆔 ID: `{user_info['user_id']}`\n"
+            f"📝 ФИО: {user_info['full_name']}\n"
+            f"📅 Дата рождения: {user_info['birth_date']}\n"
+            f"📱 Телефон: {user_info['phone_number']}"
+        )
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад к списку", callback_data="admin_users")]
+        ])
+
+        await callback.message.edit_text(
+            info_text,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    else:
+        await callback.answer("❌ Пользователь не найден.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("users_page:"))
-async def handle_users_page(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
+async def handle_users_page(callback: CallbackQuery, state: FSMContext, conn: asyncpg.Connection):
     """Обработка навигации по страницам пользователей"""
-    async with db_pool.acquire() as conn:
-        if not await is_admin(conn, callback.from_user.id):
-            await callback.answer("❌ Нет доступа.", show_alert=True)
-            return
-        
-        page = int(callback.data.split(":")[1])
-        await show_users_page(callback.message, page, state, conn)
-        await callback.answer()
+    if not await is_admin(conn, callback.from_user.id):
+        await callback.answer("❌ Нет доступа.", show_alert=True)
+        return
+
+    page = int(callback.data.split(":")[1])
+    await show_users_page(callback.message, page, state, conn)
+    await callback.answer()
 
 
 @router.message(AdminPanel.waiting_for_broadcast_message)
-async def process_broadcast_message(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
+async def process_broadcast_message(message: Message, state: FSMContext, conn: asyncpg.Connection):
     """Обработка сообщения для рассылки от админа"""
-    async with db_pool.acquire() as conn:
-        if not await is_admin(conn, message.from_user.id):
-            return
+    if not await is_admin(conn, message.from_user.id):
+        return
 
     if message.message_thread_id is None:
         try:
@@ -197,59 +190,58 @@ async def process_broadcast_message(message: Message, state: FSMContext, db_pool
 
 
 @router.callback_query(F.data.startswith("broadcast_"))
-async def broadcast_confirm_handler(callback: CallbackQuery, state: FSMContext, db_pool: asyncpg.Pool):
+async def broadcast_confirm_handler(callback: CallbackQuery, state: FSMContext, conn: asyncpg.Connection):
     """Подтверждение или отмена рассылки"""
-    async with db_pool.acquire() as conn:
-        if not await is_admin(conn, callback.from_user.id):
-            await callback.answer("❌ Нет доступа.", show_alert=True)
-            return
+    if not await is_admin(conn, callback.from_user.id):
+        await callback.answer("❌ Нет доступа.", show_alert=True)
+        return
 
-        if callback.data == "broadcast_confirm":
-            state_data = await state.get_data()
-            broadcast_data = state_data.get("broadcast_data", {})
-            success_count = 0
+    if callback.data == "broadcast_confirm":
+        state_data = await state.get_data()
+        broadcast_data = state_data.get("broadcast_data", {})
+        success_count = 0
 
-            try:
-                user_ids = await get_all_user_ids(conn)
-                for user_id in user_ids:
-                    try:
-                        if broadcast_data["photo"]:
-                            await callback.bot.send_photo(
-                                chat_id=user_id,
-                                photo=broadcast_data["photo"],
-                                caption=broadcast_data["text"],
-                                parse_mode=broadcast_data.get("parse_mode")
-                            )
-                        else:
-                            await callback.bot.send_message(
-                                chat_id=user_id,
-                                text=broadcast_data["text"],
-                                parse_mode=broadcast_data.get("parse_mode")
-                            )
-                        success_count += 1
-                    except Exception as e:
-                        logger.error(f"Broadcast error to {user_id}: {e}")
-                        continue
+        try:
+            user_ids = await get_all_user_ids(conn)
+            for user_id in user_ids:
+                try:
+                    if broadcast_data["photo"]:
+                        await callback.bot.send_photo(
+                            chat_id=user_id,
+                            photo=broadcast_data["photo"],
+                            caption=broadcast_data["text"],
+                            parse_mode=broadcast_data.get("parse_mode")
+                        )
+                    else:
+                        await callback.bot.send_message(
+                            chat_id=user_id,
+                            text=broadcast_data["text"],
+                            parse_mode=broadcast_data.get("parse_mode")
+                        )
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"Broadcast error to {user_id}: {e}")
+                    continue
 
-                await callback.message.edit_text(
-                    f"✅ *Рассылка завершена!*\n📤 Отправлено: {success_count}/{len(user_ids)}",
-                    parse_mode="Markdown",
-                    reply_markup=get_admin_menu_keyboard()
-                )
-            except Exception as e:
-                logger.error(f"Broadcast failed: {e}")
-                await callback.message.edit_text(
-                    "❌ Ошибка при отправке рассылки.", 
-                    reply_markup=get_admin_menu_keyboard()
-                )
+            await callback.message.edit_text(
+                f"✅ *Рассылка завершена!*\n📤 Отправлено: {success_count}/{len(user_ids)}",
+                parse_mode="Markdown",
+                reply_markup=get_admin_menu_keyboard()
+            )
+        except Exception as e:
+            logger.error(f"Broadcast failed: {e}")
+            await callback.message.edit_text(
+                "❌ Ошибка при отправке рассылки.", 
+                reply_markup=get_admin_menu_keyboard()
+            )
 
-            await state.clear()
+        await state.clear()
 
-        elif callback.data == "broadcast_cancel":
-            await callback.message.edit_text("❌ Рассылка отменена.", reply_markup=get_admin_menu_keyboard())
-            await state.clear()
+    elif callback.data == "broadcast_cancel":
+        await callback.message.edit_text("❌ Рассылка отменена.", reply_markup=get_admin_menu_keyboard())
+        await state.clear()
 
-        await callback.answer()
+    await callback.answer()
 
 
 async def show_users_page(message: Message, page: int, state: FSMContext, conn):
