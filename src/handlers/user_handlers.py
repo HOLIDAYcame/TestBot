@@ -94,10 +94,12 @@ async def process_phone(message: Message, state: FSMContext, db_pool: asyncpg.Po
     user_data = await state.get_data()
     full_name = user_data["full_name"]
     birth_date_str = user_data["birth_date"]
+    # Преобразуем строку даты в объект date для корректной записи в PostgreSQL
+    birth_date_obj = datetime.strptime(birth_date_str, '%d.%m.%Y').date()
 
     async with db_pool.acquire() as conn:
         try:
-            await register_user(conn, user_id, full_name, birth_date_str, phone_number)
+            await register_user(conn, user_id, full_name, birth_date_obj, phone_number)
         except Exception as e:
             logger.error(f"DB error on user registration: {e}")
             await message.answer("Ошибка при регистрации. Попробуйте позже.")
@@ -111,8 +113,21 @@ async def process_phone(message: Message, state: FSMContext, db_pool: asyncpg.Po
 
 
 @router.message(F.text == "📝 Оставить заявку")
-async def start_request(message: Message, state: FSMContext):
-    """Начало процесса создания заявки"""
+async def start_request(message: Message, state: FSMContext, db_pool: asyncpg.Pool):
+    """Начало процесса создания заявки. Проверяем, что пользователь зарегистрирован."""
+    async with db_pool.acquire() as conn:
+        try:
+            is_registered = await conn.fetchval("SELECT EXISTS (SELECT 1 FROM users WHERE user_id=$1)", message.from_user.id)
+        except Exception as e:
+            logger.error(f"DB error on registration check before request: {e}")
+            await message.answer("Ошибка при обращении к базе данных. Попробуйте позже.")
+            return
+
+    if not is_registered:
+        await message.answer("❌ Сначала пройдите регистрацию: отправьте /start и заполните данные.")
+        await state.clear()
+        return
+
     await message.answer("Пожалуйста, выберите тип заявки:", reply_markup=get_request_type_keyboard())
     await state.set_state(RequestForm.choosing_type)
 
@@ -198,6 +213,11 @@ async def _handle_request_confirmation(callback: CallbackQuery, state: FSMContex
             user_id = callback.from_user.id
             state_data = await state.get_data()
             user_info = await conn.fetchrow("SELECT full_name, phone_number FROM users WHERE user_id = $1", user_id)
+            if not user_info:
+                await callback.message.answer("❌ Вы ещё не зарегистрированы. Отправьте /start, чтобы пройти регистрацию.", reply_markup=get_main_menu())
+                await state.clear()
+                await callback.answer()
+                return
             request_id = await save_request(
                 conn, user_id, state_data["request_type"], state_data.get("screenshot"), list(selected)
             )

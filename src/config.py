@@ -21,10 +21,8 @@ DB_CONFIG = {
 if not all([DB_CONFIG["database"], DB_CONFIG["user"], DB_CONFIG["password"]]):
     raise ValueError("Не все обязательные параметры БД указаны в переменных окружения")
 
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
-if not ADMIN_CHAT_ID:
-    raise ValueError("ADMIN_CHAT_ID не найден в переменных окружения")
-ADMIN_CHAT_ID = int(ADMIN_CHAT_ID)
+_admin_chat_id_raw = os.getenv("ADMIN_CHAT_ID")
+ADMIN_CHAT_ID = int(_admin_chat_id_raw) if _admin_chat_id_raw else None
 
 # Текстовые константы
 COMPANY_INFO = """🌟 *О нас* 🌟
